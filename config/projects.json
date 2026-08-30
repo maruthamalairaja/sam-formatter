@@ -1,0 +1,20 @@
+{
+  "heading": "Explore our other projects",
+  "projects": [
+    {
+      "name": "SAM API Tester",
+      "description": "A lightweight in-browser client for testing REST endpoints.",
+      "url": "https://example.com/api-tester"
+    },
+    {
+      "name": "SAM Markdown Studio",
+      "description": "Write, preview and export Markdown documents.",
+      "url": "https://example.com/markdown-studio"
+    },
+    {
+      "name": "SAM Regex Lab",
+      "description": "Build and debug regular expressions with live match highlighting.",
+      "url": "https://example.com/regex-lab"
+    }
+  ]
+}
