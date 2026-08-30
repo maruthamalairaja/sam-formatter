@@ -1,0 +1,124 @@
+:root {
+	/* Reddish-pink "Garnet Rose" defaults — overridden at runtime by /config/theme.json */
+	--bg: #170812;
+	--bg-elevated: #210b18;
+	--bg-inset: #1b0a14;
+	--border: #4a1830;
+	--border-strong: #6b2340;
+	--accent: #ec4a76;
+	--accent-strong: #ff6f93;
+	--accent-soft: #3a1126;
+	--wine: #7c1d3f;
+	--text: #fbe4ec;
+	--text-muted: #b98aa0;
+	--text-faint: #7d5266;
+	--success: #3fcea0;
+	--warning: #f2b866;
+	--danger: #ff8484;
+
+	--font-display: 'Space Grotesk', 'Segoe UI', sans-serif;
+	--font-body: 'Inter', 'Segoe UI', sans-serif;
+	--font-mono: 'JetBrains Mono', 'Fira Code', monospace;
+
+	--radius-sm: 6px;
+	--radius-md: 10px;
+	--radius-lg: 16px;
+
+	color-scheme: dark;
+}
+
+* {
+	box-sizing: border-box;
+}
+
+html,
+body {
+	margin: 0;
+	padding: 0;
+}
+
+body {
+	background: var(--bg);
+	background-image: radial-gradient(circle at 12% -10%, rgba(236, 74, 118, 0.16), transparent 45%),
+		radial-gradient(circle at 100% 0%, rgba(124, 29, 63, 0.22), transparent 40%);
+	background-attachment: fixed;
+	color: var(--text);
+	font-family: var(--font-body);
+	-webkit-font-smoothing: antialiased;
+}
+
+a {
+	color: inherit;
+}
+
+::selection {
+	background: var(--accent);
+	color: #1b0510;
+}
+
+button {
+	font-family: inherit;
+}
+
+:focus-visible {
+	outline: 2px solid var(--accent-strong);
+	outline-offset: 2px;
+	border-radius: 3px;
+}
+
+.card {
+	background: var(--bg-elevated);
+	border: 1px solid var(--border);
+	border-radius: var(--radius-lg);
+}
+
+.page-header {
+	margin-bottom: 22px;
+}
+.page-title {
+	font-family: var(--font-display);
+	font-weight: 700;
+	font-size: 22px;
+	color: var(--text);
+	letter-spacing: -0.01em;
+}
+.page-sub {
+	color: var(--text-muted);
+	font-size: 13.5px;
+	margin-top: 4px;
+}
+
+.btn {
+	font-family: var(--font-display);
+	font-weight: 600;
+	font-size: 13.5px;
+	border-radius: var(--radius-sm);
+	padding: 11px 20px;
+	border: 1px solid var(--border-strong);
+	background: var(--bg-inset);
+	color: var(--text);
+	cursor: pointer;
+	transition: transform 0.12s ease, border-color 0.15s, box-shadow 0.15s, background 0.15s;
+}
+.btn:hover {
+	border-color: var(--accent);
+}
+.btn:active {
+	transform: translateY(1px);
+}
+.btn-primary {
+	background: linear-gradient(135deg, var(--accent), var(--wine));
+	border-color: transparent;
+	color: #1b0510;
+	box-shadow: 0 10px 24px rgba(236, 74, 118, 0.28);
+}
+.btn-primary:hover {
+	box-shadow: 0 12px 28px rgba(236, 74, 118, 0.4);
+}
+
+@media (prefers-reduced-motion: reduce) {
+	* {
+		animation-duration: 0.001ms !important;
+		transition-duration: 0.001ms !important;
+	}
+}

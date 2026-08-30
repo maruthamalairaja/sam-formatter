@@ -1,0 +1,31 @@
+{
+  "name": "Garnet Rose",
+  "description": "Default professional reddish-pink theme for SAM Data Formatter. Edit the hex values below to reskin the site — no code changes required.",
+  "colors": {
+    "bg": "#170812",
+    "bgElevated": "#210b18",
+    "bgInset": "#1b0a14",
+    "border": "#4a1830",
+    "borderStrong": "#6b2340",
+    "accent": "#ec4a76",
+    "accentStrong": "#ff6f93",
+    "accentSoft": "#3a1126",
+    "wine": "#7c1d3f",
+    "text": "#fbe4ec",
+    "textMuted": "#b98aa0",
+    "textFaint": "#7d5266",
+    "success": "#3fcea0",
+    "warning": "#f2b866",
+    "danger": "#ff8484"
+  },
+  "fonts": {
+    "display": "'Space Grotesk', 'Segoe UI', sans-serif",
+    "body": "'Inter', 'Segoe UI', sans-serif",
+    "mono": "'JetBrains Mono', 'Fira Code', monospace"
+  },
+  "radius": {
+    "sm": "6px",
+    "md": "10px",
+    "lg": "16px"
+  }
+}
