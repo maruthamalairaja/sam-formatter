@@ -296,7 +296,7 @@
 	<div class="hero-copy">
 		<span class="eyebrow">Browser-based conversion</span>
 		<h1>Reshape your data,<br />instantly.</h1>
-		<p>Paste, drop, or upload — SAM Data Formatter converts between JSON, XML, CSV and Excel entirely on your device. Nothing is sent to a server.</p>
+		<p>Paste, drop, or upload — SAM Data Formatter converts between JSON, XML, CSV and Excel entirely on your device.</p>
 	</div>
 	<div class="hero-pipeline" aria-hidden="true">
 		<div class="pipe-track">
@@ -312,22 +312,24 @@
 </section>
 
 <div class="format-bar card">
-	<div class="field">
-		<Select
-			label="Convert From"
-			bind:value={sourceFormat}
-			options={formats.map(f => ({ value: f, label: label(f) })) || []}
-			placeholder="Select format"
-		/>
-	</div>
-	<div class="arrow">→</div>
-	<div class="field">
-		<Select
-			label="Convert To"
-			bind:value={targetFormat}
-			placeholder="Select format"
-			options={formats.map(f => ({ value: f, label: label(f) })) || []}
-		/>
+	<div class="format-fields">
+		<div class="field">
+			<Select
+				label="Convert From"
+				bind:value={sourceFormat}
+				options={formats.map(f => ({ value: f, label: label(f) })) || []}
+				placeholder="Select format"
+			/>
+		</div>
+		<div class="arrow" aria-hidden="true">→</div>
+		<div class="field">
+			<Select
+				label="Convert To"
+				bind:value={targetFormat}
+				placeholder="Select format"
+				options={formats.map(f => ({ value: f, label: label(f) })) || []}
+			/>
+		</div>
 	</div>
 	<button class="btn btn-primary convert" on:click={convert}>Convert data</button>
 </div>
@@ -340,8 +342,11 @@
 				<div class="pane-help">Paste {sourceFormat === 'excel' ? 'a tab-separated Excel selection' : label(sourceFormat) + ' data'} or upload a file.</div>
 			</div>
 			<div class="actions">
-				<button class="text-btn" on:click={() => inputFile.click()}>Upload File</button>
-				<button class="text-btn" on:click={useSample}>Use sample</button>
+				<button class="text-btn tooltip-wrapper" on:click={() => inputFile.click()}>
+					<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-upload-icon lucide-upload"><path d="M12 3v12"/><path d="m17 8-5-5-5 5"/><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/></svg>
+				<span class="tooltip-text">Upload file</span>
+				</button>
+				<button class="text-btn" on:click={useSample}>Use Sample</button>
 			</div>
 		</div>
 		<input bind:this={inputFile} type="file" accept=".json,.xml,.csv,.xlsx" hidden on:change={(e) => loadFile(e.target.files[0])}/>
@@ -368,8 +373,14 @@
 				<div class="pane-help">{output ? `Ready as ${label(targetFormat)}.` : 'Your converted data appears here.'}</div>
 			</div>
 			<div class="actions">
-				<button class="text-btn" on:click={copyOutput} disabled={!output}>Copy</button>
-				<button class="text-btn" on:click={download} disabled={!output}>Download</button>
+				<button class="text-btn tooltip-wrapper" on:click={copyOutput} disabled={!output}>
+					<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-copy-icon lucide-copy"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
+					<span class="tooltip-text">Copy</span>
+				</button>
+				<button class="text-btn tooltip-wrapper" on:click={download} disabled={!output}>
+					<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-download-icon lucide-download"><path d="M12 15V3"/><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5"/></svg>
+					<span class="tooltip-text">Download</span>
+				</button>
 			</div>
 		</div>
 		<pre class="data-area output">{output || 'Converted data will appear here.'}</pre>
@@ -461,8 +472,37 @@
 		.pipe-dot { animation: none; left: 6px; opacity: 1; }
 	}
 
-	.format-bar { display:flex; align-items:end; gap:16px; margin-bottom:20px; }
-	.format-bar .field { flex:1; } .arrow { color:var(--accent); font-size:26px; padding-bottom:4px; } .convert { white-space:nowrap; }
+	.format-bar {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		flex-wrap: wrap;
+		gap: 24px;
+		margin-bottom: 24px;
+		padding: 26px 28px;
+	}
+	.format-fields {
+		display: flex;
+		align-items: flex-end;
+		gap: 28px;
+		flex: 1 1 480px;
+		min-width: 0;
+	}
+	.format-bar .field { flex: 1 1 200px; min-width: 160px; }
+	.arrow {
+		flex: 0 0 auto;
+		align-self: center;
+		color: var(--accent);
+		font-size: 20px;
+		padding: 0 2px;
+		opacity: 0.85;
+	}
+	.convert {
+		white-space: nowrap;
+		flex: 0 0 auto;
+		height: 46px;
+		padding: 0 30px;
+	}
 	.panes { display:grid; grid-template-columns:1fr 1fr; gap:20px; margin-bottom: 8px; } .pane { min-width:0; padding:20px; } .pane-head { display:flex; justify-content:space-between; gap:12px; margin-bottom:14px; } .pane-title { color:var(--text); font-weight:700; font-size:16px; font-family: var(--font-display); } .pane-help { font-size:12px; color:var(--text-muted); }
 	.actions { display:flex; gap:8px; align-items:center; }
 	.text-btn { background:transparent; border:0; padding:3px 8px; color:var(--accent); cursor:pointer; font-weight:600; font-size:12px; border-radius:4px; transition:color 0.15s, background 0.15s; }
@@ -477,6 +517,50 @@
 	.output { white-space:pre-wrap; overflow:auto; margin:0; }
 	@media (max-width:800px) {
 		.hero { grid-template-columns: 1fr; }
-		.format-bar { align-items:stretch; flex-direction:column; } .arrow { display:none; } .panes { grid-template-columns:1fr; } .data-area { min-height:280px; }
+		.format-bar { flex-direction: column; align-items: stretch; padding: 20px; }
+		.format-fields { flex-direction: column; align-items: stretch; gap: 14px; }
+		.arrow { display: none; }
+		.convert { width: 100%; }
+		.panes { grid-template-columns:1fr; } .data-area { min-height:280px; }
 	}
+
+	 /* Tooltip setup */
+  .tooltip-wrapper {
+    position: relative;
+  }
+
+  .tooltip-text {
+    visibility: hidden;
+    opacity: 0;
+    position: absolute;
+    bottom: 125%;
+    left: 50%;
+    transform: translateX(-50%);
+    background-color: #111827;
+    color: #fff;
+    text-align: center;
+    padding: 4px 8px;
+    border-radius: 4px;
+    font-size: 12px;
+    white-space: nowrap;
+    transition: opacity 0.15s ease, visibility 0.15s ease;
+    z-index: 10;
+  }
+
+  /* Little arrow under the tooltip */
+  .tooltip-text::after {
+    content: "";
+    position: absolute;
+    top: 100%;
+    left: 50%;
+    transform: translateX(-50%);
+    border-width: 4px;
+    border-style: solid;
+    border-color: #111827 transparent transparent transparent;
+  }
+
+  .tooltip-wrapper:hover .tooltip-text {
+    visibility: visible;
+    opacity: 1;
+  }
 </style>

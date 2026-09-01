@@ -88,9 +88,11 @@
 		backdrop-filter: blur(10px);
 	}
 	.header-inner {
-		max-width: 1080px;
+		width: 100%;
+		max-width: 1600px;
 		margin: 0 auto;
-		padding: 14px 24px;
+		padding: 14px clamp(16px, 3vw, 40px);
+		box-sizing: border-box;
 	}
 	.brand-mark {
 		display: inline-flex;
@@ -122,9 +124,10 @@
 	}
 	.site-main {
 		flex: 1;
-		max-width: 1080px;
+		max-width: 1600px;
 		width: 100%;
 		margin: 0 auto;
-		padding: 36px 24px 0;
+		padding: 36px clamp(16px, 3vw, 40px) 0;
+		box-sizing: border-box;
 	}
 </style>
