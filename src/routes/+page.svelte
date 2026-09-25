@@ -32,30 +32,51 @@
 	}
 	function scalar(value) { return value === null || value === undefined ? '' : typeof value === 'object' ? JSON.stringify(value) : String(value); }
 
-	function csvRows(text) {
-		const rows = []; let row = []; let cell = ''; let quoted = false;
+	function parseDelimitedRows(text, delimiter) {
+		const rows = [];
+		let row = [];
+		let cell = '';
+		let quoted = false;
 		for (let i = 0; i < text.length; i++) {
 			const c = text[i];
-			if (c === '"') { if (quoted && text[i + 1] === '"') { cell += '"'; i++; } else quoted = !quoted; }
-			else if (c === ',' && !quoted) { row.push(cell); cell = ''; }
-			else if ((c === '\n' || c === '\r') && !quoted) { if (c === '\r' && text[i + 1] === '\n') i++; row.push(cell); if (row.some(v => v !== '')) rows.push(row); row = []; cell = ''; }
-			else cell += c;
+			if (quoted) {
+				if (c === '"') {
+					if (text[i + 1] === '"') {
+						cell += '"';
+						i++;
+					} else {
+						quoted = false;
+					}
+				} else {
+					cell += c;
+				}
+			} else {
+				if (c === '"') {
+					if (cell.length === 0) {
+						quoted = true;
+					} else {
+						cell += '"';
+					}
+				} else if (c === delimiter) {
+					row.push(cell);
+					cell = '';
+				} else if (c === '\n' || c === '\r') {
+					if (c === '\r' && text[i + 1] === '\n') i++;
+					row.push(cell);
+					if (row.some(v => v !== '')) rows.push(row);
+					row = [];
+					cell = '';
+				} else {
+					cell += c;
+				}
+			}
 		}
-		row.push(cell); if (row.some(v => v !== '')) rows.push(row);
+		row.push(cell);
+		if (row.some(v => v !== '')) rows.push(row);
 		return rows;
 	}
-	function tsvRows(text) {
-		const rows = []; let row = []; let cell = ''; let quoted = false;
-		for (let i = 0; i < text.length; i++) {
-			const c = text[i];
-			if (c === '"') { if (quoted && text[i + 1] === '"') { cell += '"'; i++; } else quoted = !quoted; }
-			else if (c === '\t' && !quoted) { row.push(cell); cell = ''; }
-			else if ((c === '\n' || c === '\r') && !quoted) { if (c === '\r' && text[i + 1] === '\n') i++; row.push(cell); if (row.some(v => v !== '')) rows.push(row); row = []; cell = ''; }
-			else cell += c;
-		}
-		row.push(cell); if (row.some(v => v !== '')) rows.push(row);
-		return rows;
-	}
+	function csvRows(text) { return parseDelimitedRows(text, ','); }
+	function tsvRows(text) { return parseDelimitedRows(text, '\t'); }
 	function toRecords(value) {
 		if (Array.isArray(value)) return value.map(v => typeof v === 'object' && v !== null ? v : { value: v });
 		if (value && typeof value === 'object') {
@@ -210,8 +231,188 @@
 		if (format === 'xml') return recordsFromXml(text);
 		return recordsFromPastedSheet(text);
 	}
+	function parseJsonValue(str) {
+		if (typeof str !== 'string') return null;
+		const trimmed = str.trim();
+		if ((trimmed.startsWith('{') && trimmed.endsWith('}')) || (trimmed.startsWith('[') && trimmed.endsWith(']'))) {
+			try {
+				const parsed = JSON.parse(trimmed);
+				if (typeof parsed === 'object' && parsed !== null) {
+					return parsed;
+				}
+			} catch {
+				if (trimmed.startsWith('[') && trimmed.endsWith(']')) {
+					const inner = trimmed.slice(1, -1).trim();
+					if (inner === '') return [];
+					const items = [];
+					let current = '';
+					let inQ = false;
+					let qChar = '';
+					for (let i = 0; i < inner.length; i++) {
+						const ch = inner[i];
+						if (inQ) {
+							if (ch === qChar) {
+								inQ = false;
+							} else {
+								current += ch;
+							}
+						} else {
+							if (ch === '"' || ch === "'") {
+								inQ = true;
+								qChar = ch;
+							} else if (ch === ',') {
+								items.push(current.trim().replace(/^['"]|['"]$/g, ''));
+								current = '';
+							} else {
+								current += ch;
+							}
+						}
+					}
+					items.push(current.trim().replace(/^['"]|['"]$/g, ''));
+					return items;
+				}
+				try {
+					const jsonified = trimmed.replace(/'/g, '"');
+					const parsed = JSON.parse(jsonified);
+					if (typeof parsed === 'object' && parsed !== null) {
+						return parsed;
+					}
+				} catch {}
+			}
+		}
+		return null;
+	}
+
+	function isNumericString(str) {
+		if (typeof str !== 'string') return false;
+		const trimmed = str.trim();
+		return trimmed !== '' && /^[+-]?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?$/.test(trimmed) && !isNaN(Number(trimmed));
+	}
+
+	function isBooleanString(str) {
+		if (typeof str !== 'string') return false;
+		const lower = str.trim().toLowerCase();
+		return lower === 'true' || lower === 'false';
+	}
+
+	function inspectValue(val) {
+		if (val === null || val === undefined) {
+			return { type: 'null', value: val, converted: val };
+		}
+		if (typeof val === 'boolean') {
+			return { type: 'boolean', value: val, converted: val };
+		}
+		if (typeof val === 'number') {
+			return { type: 'number', value: val, converted: val };
+		}
+		if (typeof val === 'object') {
+			return { type: 'json', value: val, converted: getProperJSON(val) };
+		}
+		if (typeof val === 'string') {
+			const trimmed = val.trim();
+			if (trimmed === '') {
+				return { type: 'empty', value: val, converted: val };
+			}
+			if (isBooleanString(trimmed)) {
+				return { type: 'boolean', value: val, converted: trimmed.toLowerCase() === 'true' };
+			}
+			if (isNumericString(trimmed)) {
+				return { type: 'number', value: val, converted: Number(trimmed) };
+			}
+			const jsonParsed = parseJsonValue(trimmed);
+			if (jsonParsed !== null) {
+				return { type: 'json', value: val, converted: getProperJSON(jsonParsed) };
+			}
+			return { type: 'string', value: val, converted: val };
+		}
+		return { type: 'other', value: val, converted: val };
+	}
+
+	function getProperJSON(records) {
+		if (Array.isArray(records)) {
+			if (records.length === 0) return [];
+
+			const hasObjects = records.some(r => r && typeof r === 'object' && !Array.isArray(r));
+			if (hasObjects) {
+				const allKeys = [...new Set(records.flatMap(r => (r && typeof r === 'object' && !Array.isArray(r)) ? Object.keys(r) : []))];
+
+				const keyTypeMap = {};
+				for (const key of allKeys) {
+					const types = new Set();
+					for (const r of records) {
+						if (r && typeof r === 'object' && !Array.isArray(r) && key in r) {
+							const info = inspectValue(r[key]);
+							if (info.type !== 'empty' && info.type !== 'null') {
+								types.add(info.type);
+							}
+						}
+					}
+					if (types.size === 1) {
+						keyTypeMap[key] = Array.from(types)[0];
+					} else {
+						keyTypeMap[key] = 'string';
+					}
+				}
+
+				return records.map(r => {
+					if (!r || typeof r !== 'object' || Array.isArray(r)) {
+						return getProperJSON(r);
+					}
+					const newObj = {};
+					for (const [k, v] of Object.entries(r)) {
+						const targetType = keyTypeMap[k];
+						const info = inspectValue(v);
+						if (targetType && targetType !== 'string' && info.type === targetType) {
+							newObj[k] = info.converted;
+						} else if (typeof v === 'object' && v !== null) {
+							newObj[k] = getProperJSON(v);
+						} else {
+							newObj[k] = v;
+						}
+					}
+					return newObj;
+				});
+			} else {
+				const types = new Set();
+				for (const item of records) {
+					const info = inspectValue(item);
+					if (info.type !== 'empty' && info.type !== 'null') {
+						types.add(info.type);
+					}
+				}
+				if (types.size === 1) {
+					const commonType = Array.from(types)[0];
+					return records.map(item => {
+						const info = inspectValue(item);
+						if (info.type === commonType) return info.converted;
+						return item;
+					});
+				}
+				return records.map(item => typeof item === 'object' && item !== null ? getProperJSON(item) : item);
+			}
+		}
+
+		if (records && typeof records === 'object') {
+			const result = {};
+			for (const [k, v] of Object.entries(records)) {
+				const info = inspectValue(v);
+				if (info.type === 'number' || info.type === 'boolean' || info.type === 'json') {
+					result[k] = info.converted;
+				} else if (typeof v === 'object' && v !== null) {
+					result[k] = getProperJSON(v);
+				} else {
+					result[k] = v;
+				}
+			}
+			return result;
+		}
+
+		const info = inspectValue(records);
+		return (info.type === 'number' || info.type === 'boolean' || info.type === 'json') ? info.converted : records;
+	}
+
 	function render(records, format) {
-		if (format === 'json') return { text: JSON.stringify(records, null, 2), blob: null };
+		if (format === 'json') return { text: JSON.stringify(getProperJSON(records), null, 2), blob: null };
 		if (format === 'csv') return { text: recordsToCsv(records), blob: null };
 		if (format === 'xml') return { text: recordsToXml(records), blob: null };
 		return { text: recordsToTsv(records), blob: excelBlob(records) };
