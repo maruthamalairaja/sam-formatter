@@ -1,503 +1,101 @@
 <script>
-	import Select from '$lib/components/Select.svelte';
-	import { toast } from '$lib/stores/toast.js';
+	import { base } from '$app/paths';
+	import Converter from '$lib/components/Converter.svelte';
+	import { conversions } from '$lib/conversions.js';
 
-	const formats = ['json', 'xml', 'csv', 'excel'];
-	let sourceFormat = 'json';
-	let targetFormat = 'csv';
-	let input = '';
-	let output = '';
-	let outputBlob = null;
-	let uploadedName = '';
-	let inputFile;
-	let dropActive = false;
-	let currentRecords = [];
+	const canonicalUrl = 'https://formatter.amaraja.in/';
 
-	const samples = {
-		json: '[\n  { "name": "Asha", "department": "Sales", "active": true },\n  { "name": "Ravi", "department": "Engineering", "active": false }\n]',
-		csv: 'name,department,active\nAsha,Sales,true\nRavi,Engineering,false',
-		xml: '<employees>\n  <employee><name>Asha</name><department>Sales</department><active>true</active></employee>\n  <employee><name>Ravi</name><department>Engineering</department><active>false</active></employee>\n</employees>',
-		excel: 'name\tdepartment\tactive\nAsha\tSales\ttrue\nRavi\tEngineering\tfalse'
+	const webAppSchema = {
+		'@context': 'https://schema.org',
+		'@type': 'WebApplication',
+		'name': 'SAM Data Formatter',
+		'url': canonicalUrl,
+		'description': 'Free online browser-based data formatter and converter between JSON, XML, CSV, and Excel (XLSX). 100% private, client-side execution with zero server uploads.',
+		'applicationCategory': 'DeveloperApplication',
+		'operatingSystem': 'Any',
+		'offers': {
+			'@type': 'Offer',
+			'price': '0',
+			'priceCurrency': 'USD'
+		},
+		'featureList': [
+			'Convert JSON to CSV, XML, Excel',
+			'Convert CSV to JSON, XML, Excel',
+			'Convert XML to JSON, CSV, Excel',
+			'Convert Excel (XLSX) to JSON, CSV, XML',
+			'Client-side execution with zero data uploaded',
+			'Clipboard copy and file download'
+		]
 	};
 
-	function label(format) { return format === 'excel' ? 'Excel (.xlsx)' : format.toUpperCase(); }
-	function extension(format) { return format === 'excel' ? 'xlsx' : format; }
-
-	function escapeXml(value) {
-		return String(value ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&apos;');
-	}
-	function safeTag(name) {
-		const tag = String(name || 'value').replace(/[^A-Za-z0-9_.-]/g, '_');
-		return /^[A-Za-z_]/.test(tag) ? tag : `field_${tag}`;
-	}
-	function scalar(value) { return value === null || value === undefined ? '' : typeof value === 'object' ? JSON.stringify(value) : String(value); }
-
-	function parseDelimitedRows(text, delimiter) {
-		const rows = [];
-		let row = [];
-		let cell = '';
-		let quoted = false;
-		for (let i = 0; i < text.length; i++) {
-			const c = text[i];
-			if (quoted) {
-				if (c === '"') {
-					if (text[i + 1] === '"') {
-						cell += '"';
-						i++;
-					} else {
-						quoted = false;
-					}
-				} else {
-					cell += c;
+	const faqSchema = {
+		'@context': 'https://schema.org',
+		'@type': 'FAQPage',
+		'mainEntity': [
+			{
+				'@type': 'Question',
+				'name': 'Is my data safe when using SAM Data Formatter?',
+				'acceptedAnswer': {
+					'@type': 'Answer',
+					'text': 'Yes, completely. SAM Data Formatter operates 100% inside your web browser. Nothing is ever sent to or stored on remote servers, making it completely safe for sensitive and private data.'
 				}
-			} else {
-				if (c === '"') {
-					if (cell.length === 0) {
-						quoted = true;
-					} else {
-						cell += '"';
-					}
-				} else if (c === delimiter) {
-					row.push(cell);
-					cell = '';
-				} else if (c === '\n' || c === '\r') {
-					if (c === '\r' && text[i + 1] === '\n') i++;
-					row.push(cell);
-					if (row.some(v => v !== '')) rows.push(row);
-					row = [];
-					cell = '';
-				} else {
-					cell += c;
+			},
+			{
+				'@type': 'Question',
+				'name': 'Which data formats are supported?',
+				'acceptedAnswer': {
+					'@type': 'Answer',
+					'text': 'We support bidirectional conversions between JSON, CSV, XML, and Excel (.xlsx) workbooks.'
+				}
+			},
+			{
+				'@type': 'Question',
+				'name': 'Do I need to install software or register an account?',
+				'acceptedAnswer': {
+					'@type': 'Answer',
+					'text': 'No. SAM Data Formatter is 100% free with no account creation, subscriptions, or installations required. It works directly in any modern desktop or mobile browser.'
+				}
+			},
+			{
+				'@type': 'Question',
+				'name': 'Does this tool support nested JSON and complex XML hierarchies?',
+				'acceptedAnswer': {
+					'@type': 'Answer',
+					'text': 'Yes! Our custom parsers intelligently inspect object hierarchies, infer data types (numbers, booleans, arrays), and flatten or reconstruct structures cleanly.'
 				}
 			}
-		}
-		row.push(cell);
-		if (row.some(v => v !== '')) rows.push(row);
-		return rows;
-	}
-	function csvRows(text) { return parseDelimitedRows(text, ','); }
-	function tsvRows(text) { return parseDelimitedRows(text, '\t'); }
-	function toRecords(value) {
-		if (Array.isArray(value)) return value.map(v => typeof v === 'object' && v !== null ? v : { value: v });
-		if (value && typeof value === 'object') {
-			const arrays = Object.entries(value).find(([, v]) => Array.isArray(v));
-			return arrays ? toRecords(arrays[1]) : [value];
-		}
-		return [{ value }];
-	}
-	function recordsFromRows(rows) {
-		if (!rows.length) return [];
-		const [headers, ...values] = rows;
-		return values.map(row => Object.fromEntries(headers.map((h, i) => [h || `column_${i + 1}`, row[i] ?? ''])));
-	}
-	function recordsFromCsv(text) { return recordsFromRows(csvRows(text)); }
-	function recordsFromPastedSheet(text) { return recordsFromRows(tsvRows(text)); }
-	function elementValue(el) {
-		const children = Array.from(el.children);
-		if (!children.length) return el.textContent?.trim() ?? '';
-		const obj = {};
-		for (const child of children) {
-			const val = elementValue(child);
-			if (obj[child.tagName] === undefined) obj[child.tagName] = val;
-			else obj[child.tagName] = Array.isArray(obj[child.tagName]) ? [...obj[child.tagName], val] : [obj[child.tagName], val];
-		}
-		return obj;
-	}
-	function recordsFromXml(text) {
-		const doc = new DOMParser().parseFromString(text, 'application/xml');
-		if (doc.querySelector('parsererror')) throw new Error('The XML is not valid.');
-		const root = doc.documentElement;
-		const children = Array.from(root.children);
-		return children.length && children.every(c => c.tagName === children[0].tagName)
-			? children.map(elementValue).map(v => typeof v === 'object' ? v : { value: v })
-			: toRecords(elementValue(root));
-	}
-	function recordsToCsv(records) {
-		if (!records || !records.length) return '';
-		const headers = [...new Set(records.flatMap(r => Object.keys(r)))];
-		const quote = value => { const text = scalar(value); return /[",\n\r]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text; };
-		return [headers.map(quote).join(','), ...records.map(r => headers.map(h => quote(r[h])).join(','))].join('\n');
-	}
-	function recordsToTsv(records) {
-		if (!records || !records.length) return '';
-		const headers = [...new Set(records.flatMap(r => Object.keys(r)))];
-		const clean = value => {
-			const text = scalar(value);
-			return /[\t\n\r"]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
-		};
-		return [headers.map(clean).join('\t'), ...records.map(r => headers.map(h => clean(r[h])).join('\t'))].join('\n');
-	}
-	function recordsToHtmlTable(records) {
-		if (!records || !records.length) return '';
-		const headers = [...new Set(records.flatMap(r => Object.keys(r)))];
-		const ths = headers.map(h => `<th>${escapeXml(h)}</th>`).join('');
-		const trs = records.map(r => `<tr>${headers.map(h => `<td>${escapeXml(scalar(r[h]))}</td>`).join('')}</tr>`).join('');
-		return `<table><thead><tr>${ths}</tr></thead><tbody>${trs}</tbody></table>`;
-	}
-	function recordsToXml(records) {
-		const item = r => `<row>${Object.entries(r).map(([key, value]) => `<${safeTag(key)}>${escapeXml(scalar(value))}</${safeTag(key)}>`).join('')}</row>`;
-		return `<?xml version="1.0" encoding="UTF-8"?>\n<data>\n${records.map(item).join('\n')}\n</data>`;
-	}
-
-	// Minimal ZIP writer for a standards-compliant .xlsx workbook. XLSX files are ZIP archives.
-	function crc32(bytes) { let crc = -1; for (const b of bytes) { crc ^= b; for (let i = 0; i < 8; i++) crc = (crc >>> 1) ^ (0xedb88320 & -(crc & 1)); } return (crc ^ -1) >>> 0; }
-	function u16(n) { return [n & 255, (n >>> 8) & 255]; }
-	function u32(n) { return [n & 255, (n >>> 8) & 255, (n >>> 16) & 255, (n >>> 24) & 255]; }
-	function zip(files) {
-		const enc = new TextEncoder(), body = [], directory = []; let offset = 0;
-		for (const [name, text] of Object.entries(files)) {
-			const n = enc.encode(name), data = enc.encode(text), crc = crc32(data);
-			const local = new Uint8Array([...u32(0x04034b50), ...u16(20), ...u16(0), ...u16(0), ...u16(0), ...u16(0), ...u32(crc), ...u32(data.length), ...u32(data.length), ...u16(n.length), ...u16(0), ...n, ...data]);
-			body.push(local); directory.push(new Uint8Array([...u32(0x02014b50), ...u16(20), ...u16(20), ...u16(0), ...u16(0), ...u16(0), ...u16(0), ...u32(crc), ...u32(data.length), ...u32(data.length), ...u16(n.length), ...u16(0), ...u16(0), ...u16(0), ...u16(0), ...u32(0), ...u32(offset), ...n])); offset += local.length;
-		}
-		const size = directory.reduce((n, item) => n + item.length, 0);
-		return new Blob([...body, ...directory, new Uint8Array([...u32(0x06054b50), ...u16(0), ...u16(0), ...u16(directory.length), ...u16(directory.length), ...u32(size), ...u32(offset), ...u16(0)])], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
-	}
-	function excelBlob(records) {
-		const headers = [...new Set(records.flatMap(r => Object.keys(r)))];
-		const col = i => { let s = ''; for (i++; i; i = Math.floor((i - 1) / 26)) s = String.fromCharCode(65 + ((i - 1) % 26)) + s; return s; };
-		const row = (cells, index) => `<row r="${index}">${cells.map((cell, i) => `<c r="${col(i)}${index}" t="inlineStr"><is><t>${escapeXml(scalar(cell))}</t></is></c>`).join('')}</row>`;
-		const sheet = `<?xml version="1.0" encoding="UTF-8"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>${row(headers, 1)}${records.map((r, i) => row(headers.map(h => r[h]), i + 2)).join('')}</sheetData></worksheet>`;
-		return zip({
-			'[Content_Types].xml': '<?xml version="1.0" encoding="UTF-8"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/></Types>',
-			'_rels/.rels': '<?xml version="1.0" encoding="UTF-8"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>',
-			'xl/workbook.xml': '<?xml version="1.0" encoding="UTF-8"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="Data" sheetId="1" r:id="rId1"/></sheets></workbook>',
-			'xl/_rels/workbook.xml.rels': '<?xml version="1.0" encoding="UTF-8"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/></Relationships>',
-			'xl/worksheets/sheet1.xml': sheet
-		});
-	}
-
-	function colIndex(cellRef) {
-		if (!cellRef) return -1;
-		const letters = cellRef.replace(/[^A-Za-z]/g, '').toUpperCase();
-		if (!letters) return -1;
-		let col = 0;
-		for (let i = 0; i < letters.length; i++) col = col * 26 + (letters.charCodeAt(i) - 64);
-		return col - 1;
-	}
-
-	async function unzipEntries(buffer) {
-		const view = new DataView(buffer), bytes = new Uint8Array(buffer), decoder = new TextDecoder(), entries = {};
-		for (let p = 0; p + 30 < bytes.length; ) {
-			if (view.getUint32(p, true) !== 0x04034b50) { p++; continue; }
-			const method = view.getUint16(p + 8, true), compressed = view.getUint32(p + 18, true), nameLength = view.getUint16(p + 26, true), extra = view.getUint16(p + 28, true), start = p + 30 + nameLength + extra, name = decoder.decode(bytes.slice(p + 30, p + 30 + nameLength));
-			const raw = bytes.slice(start, start + compressed); let data = raw;
-			if (method === 8) data = new Uint8Array(await new Response(new Blob([raw]).stream().pipeThrough(new DecompressionStream('deflate-raw'))).arrayBuffer());
-			if (method !== 0 && method !== 8) throw new Error('This Excel compression format is not supported.');
-			entries[name] = decoder.decode(data); p = start + compressed;
-		}
-		return entries;
-	}
-	async function recordsFromExcel(file) {
-		const entries = await unzipEntries(await file.arrayBuffer());
-		const sheet = entries['xl/worksheets/sheet1.xml'] || Object.entries(entries).find(([name]) => /^xl\/worksheets\/.*\.xml$/.test(name))?.[1];
-		if (!sheet) throw new Error('No worksheet was found in this Excel file.');
-		const stringsDoc = entries['xl/sharedStrings.xml'] ? new DOMParser().parseFromString(entries['xl/sharedStrings.xml'], 'application/xml') : null;
-		const strings = stringsDoc ? Array.from(stringsDoc.querySelectorAll('si')).map(x => x.textContent || '') : [];
-		const doc = new DOMParser().parseFromString(sheet, 'application/xml');
-		const rowElements = Array.from(doc.querySelectorAll('sheetData > row'));
-		const rows = rowElements.map(row => {
-			const rowData = [];
-			const cells = Array.from(row.querySelectorAll('c'));
-			for (const c of cells) {
-				const r = c.getAttribute('r');
-				const col = colIndex(r);
-				const idx = col >= 0 ? col : rowData.length;
-				let val = '';
-				const t = c.getAttribute('t');
-				if (t === 's') {
-					const v = c.querySelector('v')?.textContent;
-					val = v !== undefined && strings[Number(v)] !== undefined ? strings[Number(v)] : '';
-				} else if (t === 'inlineStr') {
-					val = c.querySelector('is > t')?.textContent ?? c.querySelector('t')?.textContent ?? '';
-				} else {
-					val = c.querySelector('v')?.textContent ?? c.querySelector('t')?.textContent ?? '';
-				}
-				rowData[idx] = val;
-			}
-			for (let i = 0; i < rowData.length; i++) {
-				if (rowData[i] === undefined) rowData[i] = '';
-			}
-			return rowData;
-		});
-		if (!rows.length) return [];
-		const [headers, ...values] = rows;
-		return values.map(row => Object.fromEntries(headers.map((h, i) => [h || `column_${i + 1}`, row[i] ?? ''])));
-	}
-
-	function parseInput(text, format) {
-		if (format === 'json') return toRecords(JSON.parse(text));
-		if (format === 'csv') return recordsFromCsv(text);
-		if (format === 'xml') return recordsFromXml(text);
-		return recordsFromPastedSheet(text);
-	}
-	function parseJsonValue(str) {
-		if (typeof str !== 'string') return null;
-		const trimmed = str.trim();
-		if ((trimmed.startsWith('{') && trimmed.endsWith('}')) || (trimmed.startsWith('[') && trimmed.endsWith(']'))) {
-			try {
-				const parsed = JSON.parse(trimmed);
-				if (typeof parsed === 'object' && parsed !== null) {
-					return parsed;
-				}
-			} catch {
-				if (trimmed.startsWith('[') && trimmed.endsWith(']')) {
-					const inner = trimmed.slice(1, -1).trim();
-					if (inner === '') return [];
-					const items = [];
-					let current = '';
-					let inQ = false;
-					let qChar = '';
-					for (let i = 0; i < inner.length; i++) {
-						const ch = inner[i];
-						if (inQ) {
-							if (ch === qChar) {
-								inQ = false;
-							} else {
-								current += ch;
-							}
-						} else {
-							if (ch === '"' || ch === "'") {
-								inQ = true;
-								qChar = ch;
-							} else if (ch === ',') {
-								items.push(current.trim().replace(/^['"]|['"]$/g, ''));
-								current = '';
-							} else {
-								current += ch;
-							}
-						}
-					}
-					items.push(current.trim().replace(/^['"]|['"]$/g, ''));
-					return items;
-				}
-				try {
-					const jsonified = trimmed.replace(/'/g, '"');
-					const parsed = JSON.parse(jsonified);
-					if (typeof parsed === 'object' && parsed !== null) {
-						return parsed;
-					}
-				} catch {}
-			}
-		}
-		return null;
-	}
-
-	function isNumericString(str) {
-		if (typeof str !== 'string') return false;
-		const trimmed = str.trim();
-		return trimmed !== '' && /^[+-]?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?$/.test(trimmed) && !isNaN(Number(trimmed));
-	}
-
-	function isBooleanString(str) {
-		if (typeof str !== 'string') return false;
-		const lower = str.trim().toLowerCase();
-		return lower === 'true' || lower === 'false';
-	}
-
-	function inspectValue(val) {
-		if (val === null || val === undefined) {
-			return { type: 'null', value: val, converted: val };
-		}
-		if (typeof val === 'boolean') {
-			return { type: 'boolean', value: val, converted: val };
-		}
-		if (typeof val === 'number') {
-			return { type: 'number', value: val, converted: val };
-		}
-		if (typeof val === 'object') {
-			return { type: 'json', value: val, converted: getProperJSON(val) };
-		}
-		if (typeof val === 'string') {
-			const trimmed = val.trim();
-			if (trimmed === '') {
-				return { type: 'empty', value: val, converted: val };
-			}
-			if (isBooleanString(trimmed)) {
-				return { type: 'boolean', value: val, converted: trimmed.toLowerCase() === 'true' };
-			}
-			if (isNumericString(trimmed)) {
-				return { type: 'number', value: val, converted: Number(trimmed) };
-			}
-			const jsonParsed = parseJsonValue(trimmed);
-			if (jsonParsed !== null) {
-				return { type: 'json', value: val, converted: getProperJSON(jsonParsed) };
-			}
-			return { type: 'string', value: val, converted: val };
-		}
-		return { type: 'other', value: val, converted: val };
-	}
-
-	function getProperJSON(records) {
-		if (Array.isArray(records)) {
-			if (records.length === 0) return [];
-
-			const hasObjects = records.some(r => r && typeof r === 'object' && !Array.isArray(r));
-			if (hasObjects) {
-				const allKeys = [...new Set(records.flatMap(r => (r && typeof r === 'object' && !Array.isArray(r)) ? Object.keys(r) : []))];
-
-				const keyTypeMap = {};
-				for (const key of allKeys) {
-					const types = new Set();
-					for (const r of records) {
-						if (r && typeof r === 'object' && !Array.isArray(r) && key in r) {
-							const info = inspectValue(r[key]);
-							if (info.type !== 'empty' && info.type !== 'null') {
-								types.add(info.type);
-							}
-						}
-					}
-					if (types.size === 1) {
-						keyTypeMap[key] = Array.from(types)[0];
-					} else {
-						keyTypeMap[key] = 'string';
-					}
-				}
-
-				return records.map(r => {
-					if (!r || typeof r !== 'object' || Array.isArray(r)) {
-						return getProperJSON(r);
-					}
-					const newObj = {};
-					for (const [k, v] of Object.entries(r)) {
-						const targetType = keyTypeMap[k];
-						const info = inspectValue(v);
-						if (targetType && targetType !== 'string' && info.type === targetType) {
-							newObj[k] = info.converted;
-						} else if (typeof v === 'object' && v !== null) {
-							newObj[k] = getProperJSON(v);
-						} else {
-							newObj[k] = v;
-						}
-					}
-					return newObj;
-				});
-			} else {
-				const types = new Set();
-				for (const item of records) {
-					const info = inspectValue(item);
-					if (info.type !== 'empty' && info.type !== 'null') {
-						types.add(info.type);
-					}
-				}
-				if (types.size === 1) {
-					const commonType = Array.from(types)[0];
-					return records.map(item => {
-						const info = inspectValue(item);
-						if (info.type === commonType) return info.converted;
-						return item;
-					});
-				}
-				return records.map(item => typeof item === 'object' && item !== null ? getProperJSON(item) : item);
-			}
-		}
-
-		if (records && typeof records === 'object') {
-			const result = {};
-			for (const [k, v] of Object.entries(records)) {
-				const info = inspectValue(v);
-				if (info.type === 'number' || info.type === 'boolean' || info.type === 'json') {
-					result[k] = info.converted;
-				} else if (typeof v === 'object' && v !== null) {
-					result[k] = getProperJSON(v);
-				} else {
-					result[k] = v;
-				}
-			}
-			return result;
-		}
-
-		const info = inspectValue(records);
-		return (info.type === 'number' || info.type === 'boolean' || info.type === 'json') ? info.converted : records;
-	}
-
-	function render(records, format) {
-		if (format === 'json') return { text: JSON.stringify(getProperJSON(records), null, 2), blob: null };
-		if (format === 'csv') return { text: recordsToCsv(records), blob: null };
-		if (format === 'xml') return { text: recordsToXml(records), blob: null };
-		return { text: recordsToTsv(records), blob: excelBlob(records) };
-	}
-	async function convert() {
-		try {
-			if (!input.trim()) throw new Error('Paste data or upload a file first.');
-			const records = parseInput(input, sourceFormat);
-			currentRecords = records;
-			const result = render(records, targetFormat);
-			output = result.text; outputBlob = result.blob;
-			toast(`Converted to ${label(targetFormat)}.`, 'success');
-		} catch (e) { toast(e.message || 'Conversion failed.', 'error'); }
-	}
-	async function loadFile(file) {
-		if (!file) return;
-		const ext = file.name.split('.').pop().toLowerCase();
-		try {
-			if (ext === 'xlsx') {
-				sourceFormat = 'excel';
-				const records = await recordsFromExcel(file);
-				currentRecords = records;
-				input = recordsToTsv(records);
-				const result = render(records, targetFormat);
-				output = result.text; outputBlob = result.blob;
-			} else {
-				const map = { json: 'json', csv: 'csv', xml: 'xml' };
-				if (!map[ext]) throw new Error('Choose a JSON, XML, CSV, or XLSX file.');
-				sourceFormat = map[ext];
-				input = await file.text();
-				output = ''; outputBlob = null;
-				currentRecords = [];
-			}
-			uploadedName = file.name;
-		} catch (e) { toast(e.message || 'Could not read that file.', 'error'); }
-	}
-	async function copyOutput() {
-		if (!output) return;
-		try {
-			if (targetFormat === 'excel' && typeof ClipboardItem !== 'undefined' && navigator.clipboard?.write) {
-				const recordsToUse = currentRecords && currentRecords.length ? currentRecords : parseInput(output, 'excel');
-				const htmlTable = recordsToHtmlTable(recordsToUse);
-				const textBlob = new Blob([output], { type: 'text/plain' });
-				const htmlBlob = new Blob([htmlTable], { type: 'text/html' });
-				await navigator.clipboard.write([
-					new ClipboardItem({
-						'text/plain': textBlob,
-						'text/html': htmlBlob
-					})
-				]);
-				toast('Output copied.', 'success');
-				return;
-			}
-		} catch (e) {
-			// Fallback to writeText below
-		}
-		navigator.clipboard.writeText(output).then(() => toast('Output copied.', 'success')).catch(() => toast('Copy failed.', 'error'));
-	}
-	function download() {
-		if (!output) return;
-		const blob = outputBlob || new Blob([output], { type: targetFormat === 'json' ? 'application/json' : targetFormat === 'xml' ? 'application/xml' : targetFormat === 'excel' ? 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' : 'text/csv;charset=utf-8' });
-		const url = URL.createObjectURL(blob), link = document.createElement('a');
-		link.href = url;
-		link.download = `converted-data.${extension(targetFormat)}`;
-		link.click();
-		URL.revokeObjectURL(url);
-	}
-	function useSample() {
-		input = samples[sourceFormat] || samples.json;
-		uploadedName = '';
-		output = '';
-		outputBlob = null;
-		currentRecords = [];
-	}
+		]
+	};
 </script>
 
 <svelte:head>
-	<title>SAM Data Formatter — Convert JSON, XML, CSV & Excel</title>
+	<title>SAM Data Formatter — Free Online JSON, XML, CSV & Excel Converter</title>
+	<meta name="description" content="Free browser-based data converter. Instantly transform between JSON, CSV, XML, and Excel (XLSX). 100% private, client-side conversion with zero server uploads." />
+	<meta name="keywords" content="data formatter, json to csv, csv to json, json to excel, excel to json, xml to json, json to xml, csv to xml, xml to csv, data converter online free" />
+	<link rel="canonical" href={canonicalUrl} />
+
+	<!-- OpenGraph Metadata -->
+	<meta property="og:title" content="SAM Data Formatter — Convert JSON, XML, CSV & Excel" />
+	<meta property="og:description" content="Instant browser-based data converter for JSON, CSV, XML, and Excel. 100% private — your data never leaves your device." />
+	<meta property="og:url" content={canonicalUrl} />
+	<meta property="og:type" content="website" />
+	<meta property="og:site_name" content="SAM Data Formatter" />
+
+	<!-- Twitter Cards -->
+	<meta name="twitter:card" content="summary" />
+	<meta name="twitter:title" content="SAM Data Formatter — Free Online Data Converter" />
+	<meta name="twitter:description" content="Convert JSON, XML, CSV, and Excel spreadsheets instantly in your browser with zero uploads." />
+
+	<!-- Structured Data -->
+	{@html `<script type="application/ld+json">${JSON.stringify(webAppSchema)}</script>`}
+	{@html `<script type="application/ld+json">${JSON.stringify(faqSchema)}</script>`}
 </svelte:head>
 
 <section class="hero">
 	<div class="hero-copy">
 		<span class="eyebrow">Browser-based conversion</span>
 		<h1>Reshape your data,<br />instantly.</h1>
-		<p>Paste, drop, or upload — SAM Data Formatter converts between JSON, XML, CSV and Excel entirely on your device.</p>
+		<p>Paste, drop, or upload — SAM Data Formatter converts between JSON, XML, CSV and Excel entirely on your device with zero server uploads.</p>
 	</div>
 	<div class="hero-pipeline" aria-hidden="true">
 		<div class="pipe-track">
@@ -512,81 +110,82 @@
 	</div>
 </section>
 
-<div class="format-bar card">
-	<div class="format-fields">
-		<div class="field">
-			<Select
-				label="Convert From"
-				bind:value={sourceFormat}
-				options={formats.map(f => ({ value: f, label: label(f) })) || []}
-				placeholder="Select format"
-			/>
-		</div>
-		<div class="arrow" aria-hidden="true">→</div>
-		<div class="field">
-			<Select
-				label="Convert To"
-				bind:value={targetFormat}
-				placeholder="Select format"
-				options={formats.map(f => ({ value: f, label: label(f) })) || []}
-			/>
-		</div>
-	</div>
-	<button class="btn btn-primary convert" on:click={convert}>Convert data</button>
+<div class="tool-wrapper">
+	<Converter initialSourceFormat="json" initialTargetFormat="csv" />
 </div>
 
-<div class="panes">
-	<section class="pane card">
-		<div class="pane-head">
-			<div>
-				<div class="pane-title">Input</div>
-				<div class="pane-help">Paste {sourceFormat === 'excel' ? 'a tab-separated Excel selection' : label(sourceFormat) + ' data'} or upload a file.</div>
-			</div>
-			<div class="actions">
-				<button class="text-btn tooltip-wrapper" on:click={() => inputFile.click()}>
-					<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-upload-icon lucide-upload"><path d="M12 3v12"/><path d="m17 8-5-5-5 5"/><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/></svg>
-				<span class="tooltip-text">Upload file</span>
-				</button>
-				<button class="text-btn" on:click={useSample}>Use Sample</button>
-			</div>
+<section class="converters-section">
+	<div class="section-header">
+		<h2 class="section-title">All Data Converters</h2>
+		<p class="section-sub">Select a dedicated converter for your specific format pair with tailored tools and format tips.</p>
+	</div>
+	<div class="converters-grid">
+		{#each conversions as conv}
+			<a class="conv-card card" href="{base}/{conv.slug}/">
+				<div class="conv-top">
+					<span class="conv-badge">{conv.fromName} → {conv.toName}</span>
+					<span class="conv-arrow" aria-hidden="true">↗</span>
+				</div>
+				<h3 class="conv-heading">{conv.h1}</h3>
+				<p class="conv-desc">{conv.summary}</p>
+			</a>
+		{/each}
+	</div>
+</section>
+
+<section class="highlights-section">
+	<div class="section-header">
+		<h2 class="section-title">Why Choose SAM Data Formatter?</h2>
+		<p class="section-sub">Engineered for speed, privacy, and seamless developer workflows.</p>
+	</div>
+	<div class="highlights-grid">
+		<div class="highlight-card card">
+			<div class="hl-icon" aria-hidden="true">🔒</div>
+			<h3>100% Client-Side Privacy</h3>
+			<p>Your datasets and files never leave your device. All parsing, transformation, and file generation execute entirely in your web browser.</p>
 		</div>
-		<input bind:this={inputFile} type="file" accept=".json,.xml,.csv,.xlsx" hidden on:change={(e) => loadFile(e.target.files[0])}/>
-		{#if uploadedName}
-			<div class="uploaded-pill">
-				<span>📄 {uploadedName}</span>
-				<button type="button" class="remove-pill-btn" on:click={() => { uploadedName = ''; input = ''; currentRecords = []; output = ''; }} title="Clear file">✕</button>
-			</div>
-		{/if}
-		<textarea
-			class="data-area"
-			class:drag-active={dropActive}
-			bind:value={input}
-			placeholder={sourceFormat === 'excel' ? 'Paste a copied Excel table here, or upload an .xlsx file.' : `Paste ${label(sourceFormat)} here…`}
-			on:dragover|preventDefault={() => dropActive = true}
-			on:dragleave={() => dropActive = false}
-			on:drop|preventDefault={(e) => { dropActive = false; loadFile(e.dataTransfer.files[0]); }}
-		></textarea>
-	</section>
-	<section class="pane card">
-		<div class="pane-head">
-			<div>
-				<div class="pane-title">Output</div>
-				<div class="pane-help">{output ? `Ready as ${label(targetFormat)}.` : 'Your converted data appears here.'}</div>
-			</div>
-			<div class="actions">
-				<button class="text-btn tooltip-wrapper" on:click={copyOutput} disabled={!output}>
-					<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-copy-icon lucide-copy"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
-					<span class="tooltip-text">Copy</span>
-				</button>
-				<button class="text-btn tooltip-wrapper" on:click={download} disabled={!output}>
-					<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-download-icon lucide-download"><path d="M12 15V3"/><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5"/></svg>
-					<span class="tooltip-text">Download</span>
-				</button>
-			</div>
+		<div class="highlight-card card">
+			<div class="hl-icon" aria-hidden="true">⚡</div>
+			<h3>Instant & Unlimited</h3>
+			<p>No waiting in server conversion queues, no file upload timeouts, and no daily limits. Transform multi-megabyte payloads in milliseconds.</p>
 		</div>
-		<pre class="data-area output">{output || 'Converted data will appear here.'}</pre>
-	</section>
-</div>
+		<div class="highlight-card card">
+			<div class="hl-icon" aria-hidden="true">📊</div>
+			<h3>Real Excel (.xlsx) Support</h3>
+			<p>Generates real, zipped OpenXML (.xlsx) files natively that open cleanly in Microsoft Excel, Google Sheets, and LibreOffice.</p>
+		</div>
+		<div class="highlight-card card">
+			<div class="hl-icon" aria-hidden="true">🧠</div>
+			<h3>Smart Type Detection</h3>
+			<p>Automatically distinguishes numbers, booleans, strings, and serialized structures to preserve original data types accurately.</p>
+		</div>
+	</div>
+</section>
+
+<section class="home-faq-section">
+	<div class="section-header">
+		<h2 class="section-title">Frequently Asked Questions</h2>
+		<p class="section-sub">Common questions about data conversions and security.</p>
+	</div>
+	<div class="faq-grid">
+		<div class="faq-box card">
+			<h3>Is my data safe and confidential?</h3>
+			<p>Yes, 100%. SAM Data Formatter is built with a client-side architecture. When you paste or upload files, your data is processed only in your browser's local memory. No file or text is ever sent across the network.</p>
+		</div>
+		<div class="faq-box card">
+			<h3>Can I convert between Excel files and JSON/CSV?</h3>
+			<p>Yes! You can upload .xlsx files or paste copied rows from Excel directly into the tool. You can also export tabular datasets directly as genuine Microsoft Excel (.xlsx) spreadsheets.</p>
+		</div>
+		<div class="faq-box card">
+			<h3>Do I need an account or subscription?</h3>
+			<p>No. SAM Data Formatter is completely free to use without registration, sign-ups, or subscriptions.</p>
+		</div>
+		<div class="faq-box card">
+			<h3>How are nested JSON structures handled when converting to CSV?</h3>
+			<p>Nested objects and arrays are intelligently inspected and flattened into formatted fields so your CSV output remains structured and readable.</p>
+		</div>
+	</div>
+</section>
 
 <style>
 	.hero {
@@ -673,95 +272,140 @@
 		.pipe-dot { animation: none; left: 6px; opacity: 1; }
 	}
 
-	.format-bar {
-		display: flex;
-		align-items: center;
-		justify-content: space-between;
-		flex-wrap: wrap;
-		gap: 24px;
+	.tool-wrapper {
+		margin-bottom: 56px;
+	}
+
+	.section-header {
 		margin-bottom: 24px;
-		padding: 26px 28px;
 	}
-	.format-fields {
+	.section-title {
+		font-family: var(--font-display);
+		font-size: 26px;
+		font-weight: 700;
+		color: var(--text);
+		margin: 0 0 8px;
+	}
+	.section-sub {
+		color: var(--text-muted);
+		font-size: 14.5px;
+		margin: 0;
+	}
+
+	.converters-section {
+		margin-bottom: 56px;
+	}
+	.converters-grid {
+		display: grid;
+		grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+		gap: 16px;
+	}
+	.conv-card {
 		display: flex;
-		align-items: flex-end;
-		gap: 28px;
-		flex: 1 1 480px;
-		min-width: 0;
+		flex-direction: column;
+		padding: 22px;
+		text-decoration: none;
+		transition: border-color 0.15s, transform 0.15s;
 	}
-	.format-bar .field { flex: 1 1 200px; min-width: 160px; }
-	.arrow {
-		flex: 0 0 auto;
-		align-self: center;
+	.conv-card:hover {
+		border-color: var(--accent);
+		transform: translateY(-2px);
+	}
+	.conv-top {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		margin-bottom: 12px;
+	}
+	.conv-badge {
+		font-family: var(--font-mono);
+		font-size: 11.5px;
+		color: var(--accent-strong);
+		background: var(--accent-soft);
+		border: 1px solid var(--border-strong);
+		padding: 3px 8px;
+		border-radius: 6px;
+	}
+	.conv-arrow {
+		color: var(--text-muted);
+		font-size: 16px;
+		transition: color 0.15s, transform 0.15s;
+	}
+	.conv-card:hover .conv-arrow {
 		color: var(--accent);
-		font-size: 20px;
-		padding: 0 2px;
-		opacity: 0.85;
+		transform: translate(2px, -2px);
 	}
-	.convert {
-		white-space: nowrap;
-		flex: 0 0 auto;
-		height: 46px;
-		padding: 0 30px;
+	.conv-heading {
+		font-family: var(--font-display);
+		font-size: 17px;
+		font-weight: 700;
+		color: var(--text);
+		margin: 0 0 8px;
 	}
-	.panes { display:grid; grid-template-columns:1fr 1fr; gap:20px; margin-bottom: 8px; } .pane { min-width:0; padding:20px; } .pane-head { display:flex; justify-content:space-between; gap:12px; margin-bottom:14px; } .pane-title { color:var(--text); font-weight:700; font-size:16px; font-family: var(--font-display); } .pane-help { font-size:12px; color:var(--text-muted); }
-	.actions { display:flex; gap:8px; align-items:center; }
-	.text-btn { background:transparent; border:0; padding:3px 8px; color:var(--accent); cursor:pointer; font-weight:600; font-size:12px; border-radius:4px; transition:color 0.15s, background 0.15s; }
-	.text-btn:hover:not(:disabled) { color:var(--text); background:var(--accent-soft); }
-	.text-btn:disabled { opacity:.4; cursor:not-allowed; }
-	.uploaded-pill { display:inline-flex; align-items:center; gap:6px; background:var(--bg-inset); border:1px solid var(--border-strong); border-radius:6px; padding:4px 8px; font-size:11.5px; color:var(--accent-strong); margin-bottom:10px; }
-	.uploaded-pill span { max-width:260px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-	.remove-pill-btn { background:transparent; border:none; color:var(--text-muted); cursor:pointer; padding:0 2px; font-size:11px; }
-	.remove-pill-btn:hover { color:var(--accent); }
-	.data-area { width:100%; min-height:420px; resize:vertical; border:1px solid var(--border); border-radius:8px; background:var(--bg-inset); color:var(--text); padding:14px; outline:none; font:13px/1.55 var(--font-mono); transition:border-color 0.15s; }
-	textarea.data-area:focus, textarea.data-area.drag-active { border-color:var(--accent); }
-	.output { white-space:pre-wrap; overflow:auto; margin:0; }
-	@media (max-width:800px) {
-		.hero { grid-template-columns: 1fr; }
-		.format-bar { flex-direction: column; align-items: stretch; padding: 20px; }
-		.format-fields { flex-direction: column; align-items: stretch; gap: 14px; }
-		.arrow { display: none; }
-		.convert { width: 100%; }
-		.panes { grid-template-columns:1fr; } .data-area { min-height:280px; }
+	.conv-desc {
+		font-size: 13px;
+		color: var(--text-muted);
+		line-height: 1.5;
+		margin: 0;
 	}
 
-	 /* Tooltip setup */
-  .tooltip-wrapper {
-    position: relative;
-  }
+	.highlights-section {
+		margin-bottom: 56px;
+	}
+	.highlights-grid {
+		display: grid;
+		grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+		gap: 18px;
+	}
+	.highlight-card {
+		padding: 24px;
+	}
+	.hl-icon {
+		font-size: 26px;
+		margin-bottom: 12px;
+	}
+	.highlight-card h3 {
+		font-family: var(--font-display);
+		font-size: 16px;
+		font-weight: 600;
+		color: var(--text);
+		margin: 0 0 8px;
+	}
+	.highlight-card p {
+		font-size: 13.5px;
+		color: var(--text-muted);
+		line-height: 1.55;
+		margin: 0;
+	}
 
-  .tooltip-text {
-    visibility: hidden;
-    opacity: 0;
-    position: absolute;
-    bottom: 125%;
-    left: 50%;
-    transform: translateX(-50%);
-    background-color: #111827;
-    color: #fff;
-    text-align: center;
-    padding: 4px 8px;
-    border-radius: 4px;
-    font-size: 12px;
-    white-space: nowrap;
-    transition: opacity 0.15s ease, visibility 0.15s ease;
-    z-index: 10;
-  }
+	.home-faq-section {
+		margin-bottom: 24px;
+	}
+	.faq-grid {
+		display: grid;
+		grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+		gap: 18px;
+	}
+	.faq-box {
+		padding: 24px;
+	}
+	.faq-box h3 {
+		font-family: var(--font-display);
+		font-size: 16px;
+		font-weight: 600;
+		color: var(--text);
+		margin: 0 0 8px;
+	}
+	.faq-box p {
+		font-size: 13.5px;
+		color: var(--text-muted);
+		line-height: 1.6;
+		margin: 0;
+	}
 
-  /* Little arrow under the tooltip */
-  .tooltip-text::after {
-    content: "";
-    position: absolute;
-    top: 100%;
-    left: 50%;
-    transform: translateX(-50%);
-    border-width: 4px;
-    border-style: solid;
-    border-color: #111827 transparent transparent transparent;
-  }
-
-  .tooltip-wrapper:hover .tooltip-text {
-    visibility: visible;
-    opacity: 1;
-  }
+	@media (max-width: 800px) {
+		.hero {
+			grid-template-columns: 1fr;
+		}
+	}
 </style>

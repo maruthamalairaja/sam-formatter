@@ -28,7 +28,7 @@
 <svelte:window on:click={handleWindowClick} on:keydown={handleKey} />
 
 <div class="select-field" bind:this={rootEl}>
-	{#if label}<label class="select-label">{label}</label>{/if}
+	{#if label}<span class="select-label">{label}</span>{/if}
 	<button
 		type="button"
 		class="select-trigger"

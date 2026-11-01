@@ -11,18 +11,25 @@ sam-data-formatter/
 │   ├── app.css                   # Global styles & default theme tokens
 │   ├── lib/
 │   │   ├── components/
+│   │   │   ├── Converter.svelte  # Reusable core data conversion tool
 │   │   │   ├── Select.svelte     # Themed dropdown used for format pickers
 │   │   │   ├── Footer.svelte     # "Explore our other projects" footer
 │   │   │   └── ToastHost.svelte  # Success/error toast notifications
+│   │   ├── conversions.js        # Data conversion definitions & SEO metadata
 │   │   └── stores/
 │   │       └── toast.js          # Toast store
 │   └── routes/
 │       ├── +layout.js            # prerender = true (static export)
 │       ├── +layout.svelte        # Header, applies theme.json, footer
-│       └── +page.svelte          # Hero + the format-conversion tool
+│       ├── +page.svelte          # Homepage + all converters directory
+│       └── [conversion]/         # Dedicated static SEO pages for each conversion
+│           ├── +page.js          # Prerender entries generator
+│           └── +page.svelte      # Conversion-specific page with Schema.org & FAQs
 └── static/
     ├── CNAME                     # Your custom domain (edit this!)
     ├── .nojekyll                 # Tells GitHub Pages to skip Jekyll
+    ├── robots.txt                # Search engine crawler instructions
+    ├── sitemap.xml               # XML sitemap with all conversion URLs
     ├── favicon.svg
     └── config/
         ├── theme.json            # Configurable color/font/radius tokens

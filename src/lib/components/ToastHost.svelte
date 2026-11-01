@@ -4,10 +4,10 @@
 
 <div class="toast-host" role="status" aria-live="polite">
 	{#each $toasts as t (t.id)}
-		<div class="toast toast-{t.type}" on:click={() => dismiss(t.id)}>
+		<button type="button" class="toast toast-{t.type}" on:click={() => dismiss(t.id)}>
 			<span class="dot"></span>
 			<span class="msg">{t.message}</span>
-		</div>
+		</button>
 	{/each}
 </div>
 
@@ -25,6 +25,8 @@
 	.toast {
 		display: flex;
 		align-items: center;
+		text-align: left;
+		width: 100%;
 		gap: 10px;
 		background: var(--bg-elevated);
 		border: 1px solid var(--border-strong);
